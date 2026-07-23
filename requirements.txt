@@ -17,15 +17,10 @@ noisereduce==3.0.3        # Background noise reduction
 # ===== Dependencies (auto-installed with above) =====
 # sacremoses - Tokenization helper (installed with transformers)
 
-# ===== Vosk ASR (install separately) =====
-# Vosk doesn't support pip install directly on Jetson aarch64
-# Download wheel from GitHub:
-#   https://github.com/alphacep/vosk-api/releases/download/v0.3.42/vosk-0.3.42-py3-none-linux_aarch64.whl
-# Install with:
-#   pip3 install vosk-0.3.42-py3-none-linux_aarch64.whl
-# Download model (~200 MB):
-#   wget https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip
-#   unzip vosk-model-en-us-0.22-lgraph.zip
+# ===== Whisper ASR =====
+# Install via pip:
+#   pip3 install openai-whisper
+# Model downloads automatically on first use via whisper.load_model("tiny")
 
 # ===== System Dependencies (install via apt) =====
 # sudo apt-get update
