@@ -1,32 +1,35 @@
-# Concurrent Translation Pipeline on Edge Device
+# Speech Translation Pipeline on Edge Device
 
 Real-time speech translation system running entirely on NVIDIA Jetson Nano (4GB)
 
-**English speech → ASR (Whisper) → MT (Opus-MT) → QE (mBERT) → TTS (espeak-ng)**
+**English speech → ASR (Whisper tiny) → MT (Opus-MT) → QE (mBERT) → TTS (espeak-ng)**
 
-[![Python 3.6](https://img.shields.io/badge/python-3.6-blue.svg)](https://www.python.org/downloads/release/python-369/)
+[![Python 3.8](https://img.shields.io/badge/python-3.8-blue.svg)](https://www.python.org/downloads/release/python-380/)
 [![JetPack 4.6](https://img.shields.io/badge/JetPack-4.6-green.svg)](https://developer.nvidia.com/embedded/jetpack)
 
 ---
 
 ## Overview
 
-Privacy-preserving edge translation pipeline designed for resource-constrained devices. All processing happens on-device without cloud dependencies.
+Privacy-preserving edge translation pipeline designed for resource-constrained devices. All processing happens on-device without cloud dependencies. The pipeline uses a sequential load-and-unload architecture to fit within the Jetson Nano's 4GB shared RAM, since all three transformer models cannot be held in memory simultaneously.
 
 ### Key Features
 
 - **On-Device Processing:** No internet required, full privacy
-- **Integrated Quality Estimation:** Real-time translation quality scoring using mBERT
+- **Integrated Quality Estimation:** Real-time translation quality scoring using mBERT, used as an active self-correction trigger rather than a passive diagnostic
 - **Noise Reduction:** Adaptive filtering for noisy environments (scipy + noisereduce)
 - **Modular Architecture:** Easy to swap ASR/MT/QE/TTS components
-- **Memory Optimized:** Runs on 4GB RAM with sequential model loading
+- **Memory Optimized:** Runs on 4GB RAM via sequential model loading and unloading
 - **Voice Activity Detection:** Automatic speech detection with silence-based segmentation
 
 ### Performance
 
-- End-to-end latency: ~5-8s for 10s audio (target: real-time capable)
-- Memory footprint: ~3.2GB peak usage
-- Hardware: NVIDIA Jetson Nano 4GB, 128-core Maxwell GPU
+Two operating modes are supported, with different latency profiles:
+
+- **Real-time mode (all models resident):** ~1.8s net inference per utterance
+- **Batch/self-correction mode (sequential load-unload):** ~35-83s per sentence, depending on whether correction is triggered — this cost is dominated by mandatory model reload between stages, required by the 4GB memory ceiling
+- **Peak memory usage:** ~2.7-3.3 GB across live demo runs
+- **Hardware:** NVIDIA Jetson Nano 4GB, 128-core Maxwell GPU (inference runs on ARM CPU; CUDA is not supported for these models under the JetPack 4 software stack)
 
 ---
 
@@ -34,7 +37,7 @@ Privacy-preserving edge translation pipeline designed for resource-constrained d
 
 - **Device:** NVIDIA Jetson Nano 4GB (or higher)
 - **OS:** Ubuntu 18.04 (JetPack 4.6)
-- **Python:** 3.6.9
+- **Python:** 3.8
 - **Storage:** ~5GB free space (models + code)
 - **Microphone:** USB or 3.5mm input
 
@@ -62,29 +65,17 @@ sudo apt-get install -y espeak-ng portaudio19-dev libsndfile1
 pip3 install -r requirements.txt
 ```
 
-### 4. Install Vosk ASR
-
-Vosk requires manual installation on Jetson (aarch64):
+### 4. Install Whisper ASR
 
 ```bash
-# Download Vosk wheel
-wget https://github.com/alphacep/vosk-api/releases/download/v0.3.42/vosk-0.3.42-py3-none-linux_aarch64.whl
-
-# Install
-pip3 install vosk-0.3.42-py3-none-linux_aarch64.whl
-
-# Download ASR model (~200 MB)
-wget https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip
-unzip vosk-model-en-us-0.22-lgraph.zip
-rm vosk-model-en-us-0.22-lgraph.zip
+pip3 install openai-whisper
 ```
+
+The tiny model (~160MB) is used for its minimal footprint, making it deployable alongside Opus-MT and mBERT within the Jetson Nano's 4GB RAM budget. The model downloads automatically on first use via `whisper.load_model("tiny")`.
 
 ### 5. Test Installation
 
 ```bash
-# Test Vosk ASR standalone
-python3 test_vosk_simple.py
-
 # Test full pipeline (1 recording)
 python3 phase3b_main_FIXED.py --num-recordings 1
 ```
@@ -122,7 +113,6 @@ python3 phase3b_main_FIXED.py --list-devices
 ---
 
 ## Architecture
-
 ```
 ┌─────────────┐
 │  Microphone │
@@ -136,22 +126,22 @@ python3 phase3b_main_FIXED.py --list-devices
        │
        ▼
 ┌─────────────────────┐
-│   ASR (Vosk)        │  English transcription
+│   ASR               │  English transcription
 └──────┬──────────────┘
        │
        ▼
 ┌─────────────────────┐
-│  MT (Opus-MT)       │  Translation to target lang
+│  MT                 │  Translation to target lang
 └──────┬──────────────┘
        │
        ▼
 ┌─────────────────────┐
-│  QE (mBERT)         │  Quality scoring (0-1)
+│  QE                 │  Quality scoring (0-1)
 └──────┬──────────────┘
        │
        ▼
 ┌─────────────────────┐
-│  TTS (espeak-ng)    │  Audio synthesis & playback
+│  TTS                │  Audio synthesis & playback
 └─────────────────────┘
 ```
 
@@ -161,17 +151,19 @@ python3 phase3b_main_FIXED.py --list-devices
 
 ```
 concurrent_translation/
-├── phase3a_asr_module.py      # ASR component (Vosk)
-├── phase3a_mt_module.py       # Machine Translation (Opus-MT)
-├── phase3a_qe_module.py       # Quality Estimation (mBERT)
-├── phase3a_tts_module.py      # Text-to-Speech (espeak-ng)
-├── phase3b_audio_module.py    # Microphone capture + VAD + noise reduction
-├── phase3b_main_FIXED.py      # Main pipeline orchestrator
-├── test_vosk.py               # Vosk standalone test
-├── test_vosk_simple.py        # Simple Vosk test
-├── requirements.txt           # Python dependencies
-├── .gitignore                 # Git exclusions
-└── README.md                  # This file
+├── phase3a_asr_module.py # ASR component (Whisper tiny)
+├── phase3a_mt_module.py # Machine Translation (Opus-MT)
+├── phase3a_qe_module.py # Quality Estimation (mBERT)
+├── phase3a_tts_module.py # Text-to-Speech (espeak-ng)
+├── phase3b_audio_module.py # Microphone capture + VAD + noise reduction
+├── phase3b_main_FIXED.py # Main pipeline orchestrator (real-time, single-load)
+├── phase4_baseline.py # Batch evaluation: greedy baseline
+├── phase4_selfcorrect.py # Batch evaluation: grid search over τ, N, methods
+├── phase5_eval_cbs.py # Constrained Beam Search diagnostic study
+├── correct_baseline.py # MT-only BLEU/ChrF baseline on clean text
+├── requirements.txt # Python dependencies
+├── .gitignore # Git exclusions
+└── README.md # This file
 ```
 
 ---
@@ -180,18 +172,18 @@ concurrent_translation/
 
 ### Component Specifications
 
-| Component | Model/Library | Size | Device | Purpose |
-|-----------|---------------|------|--------|---------|
-| **ASR** | Vosk small-en-us-0.22 | 200 MB | CPU | Speech recognition |
-| **MT** | Opus-MT-en-es | ~300 MB | GPU | Neural translation |
-| **QE** | mBERT base | ~400 MB | GPU | Translation quality |
-| **TTS** | espeak-ng | ~5 MB | CPU | Speech synthesis |
+| Component | Model/Library         | Size    | Device | Purpose             |
+| --------- | ---------------------- | ------- | ------ | -------------------- |
+| **ASR**   | Whisper tiny            | ~160 MB | CPU    | Speech recognition  |
+| **MT**    | Opus-MT-en-es           | ~180 MB | CPU    | Neural translation  |
+| **QE**    | mBERT base              | ~680 MB | CPU    | Translation quality |
+| **TTS**   | espeak-ng               | <10 MB  | CPU    | Speech synthesis    |
 
-### Why Vosk Instead of Whisper?
+*All inference runs on ARM CPU. The Jetson Nano's Maxwell GPU cannot be used for these models under the JetPack 4 / Python 3.8 software stack, which lacks CUDA kernel support for the transformer libraries used here.*
 
-**Problem:** OpenAI Whisper requires Python ≥3.8  
-**Constraint:** JetPack 4.6 is limited to Python 3.6  
-**Solution:** Vosk provides competitive ASR accuracy with Python 3.6 support
+### Why Whisper Tiny?
+
+Whisper tiny was selected for ASR based on three criteria: multilingual capability, robustness to acoustic variation, and memory footprint. At ~160MB, it's the smallest model in the Whisper family that maintains reasonable word error rates on general-domain speech, making it deployable alongside the MT and QE components within the Jetson Nano's 4GB RAM.
 
 ### Noise Reduction Strategy
 
@@ -201,24 +193,24 @@ concurrent_translation/
 
 ### Memory Management
 
-- **Sequential Loading:** Models loaded one at a time to fit in 4GB
-- **GPU Sharing:** MT and QE share GPU, ASR uses CPU
-- **Peak Usage:** ~3.2GB during translation phase
+- **Sequential Loading:** Models loaded one at a time to fit in 4GB; each component's memory is released via cleanup() and gc.collect() before the next component loads
+- **CPU-only inference:** All models run on ARM CPU due to software stack constraints
+- **Peak Usage:** ~2.7-3.3 GB across live demo runs, well within the 4GB ceiling
 
 ---
 
 ## Performance Benchmarks
 
+Figures below are from the real-time, single-load pipeline (all models resident in memory), profiled on Jetson Nano ARM CPU:
+
 | Metric | Value | Notes |
 |--------|-------|-------|
-| ASR Latency | ~3-4s | For 10s audio |
-| MT Latency | ~0.8-1.2s | Per sentence |
-| QE Latency | ~1.0-1.5s | Per translation |
-| TTS Latency | ~1.5-2.0s | Per sentence |
-| **Total Pipeline** | ~5-8s | End-to-end |
-| Real-time Factor | 0.5-0.8 | Faster than real-time |
+| ASR Latency | ~3.2s | Whisper tiny inference |
+| MT Latency (greedy) | ~14.4s | Per sentence, first pass |
+| QE Latency | ~16.1s | mBERT cosine similarity |
+| TTS Latency | ~2.0s | Per sentence |
 
-*(Baseline measurements, Week 3)*
+*For the batch self-correction evaluation (sequential load/unload architecture used in the formal grid search), total pipeline latency is substantially higher due to mandatory model reload costs — see the dissertation for full figures (baseline ~48s, self-correction ~83s per sentence).*
 
 ---
 
@@ -227,10 +219,6 @@ concurrent_translation/
 ### Unit Tests
 
 ```bash
-# Test ASR only
-python3 test_vosk_simple.py
-
-# Test each module
 python3 -c "from phase3a_asr_module import WhisperASR; print('ASR OK')"
 python3 -c "from phase3a_mt_module import OpusMT; print('MT OK')"
 ```
@@ -246,58 +234,45 @@ python3 phase3b_main_FIXED.py --num-recordings 1
 
 ## Dissertation Context
 
-This project is part of a Masters dissertation investigating:
+This project was submitted as a BSc final year dissertation:
 
-> **"Integrated Quality Estimation in Real-Time Edge Speech Translation"**
+> **"Quality-Aware Self-Correcting Speech Translation on an Edge Device"**
 
 ### Research Questions
 
-1. Can concurrent execution reduce latency vs serial pipeline?
-2. Can integrated QE improve quality without major overhead?
-3. Is real-time translation feasible on 4GB edge devices?
+1. Can quality estimation function as an active control signal to trigger self-correction in an edge-deployed speech translation pipeline?
+2. Can integrated QE improve translation quality without major memory or architectural overhead?
+3. Is quality-aware self-correction feasible on 4GB edge devices?
 
-### Current Status
+### Status
 
-- **Week 3:** Baseline implementation complete (serial pipeline)
-- **Week 4:** Baseline testing & metrics collection (upcoming)
-- **Week 5-6:** Concurrent execution implementation
-- **Week 7-8:** Analysis & write-up
+Completed. Full evaluation conducted over 1,012 FLORES-200 sentences on Jetson Nano hardware, with statistically significant BLEU and ChrF improvements achieved via QE-triggered Minimum Bayes Risk decoding (best configuration: τ=0.90, N=10, BLEU +0.67, ChrF +0.50, p<0.001).
 
 ---
 
 ## Known Issues & Limitations
 
-- **Python 3.6 constraint:** Limits library choices (JetPack 4.6 requirement)
-- **ASR accuracy:** Small Vosk model trades accuracy for memory
-- **GPU memory:** MT + QE must run sequentially (not enough VRAM for parallel)
-- **Language support:** Currently only English → Spanish (easily extensible)
+- **Single language pair:** Currently English → Spanish only (architecture is language-agnostic and extensible)
+- **CPU-only inference:** No CUDA support under the current JetPack 4 / Python 3.8 stack, limiting inference speed
+- **Sequential load architecture:** Required by the 4GB memory ceiling; introduces model reload overhead in the batch self-correction pipeline
+- **QE signal:** mBERT cosine similarity is a proxy for quality (moderate correlation with COMET, r=0.41); a stronger reference-free QE model (e.g. COMET-Kiwi) was not usable due to its larger memory footprint
 
 ---
 
 ## Troubleshooting
 
-### "No module named 'vosk'"
+### "CUDA out of memory" / no GPU acceleration
 
-Install Vosk wheel manually (see installation section).
-
-### "Model not found: vosk-model-en-us-0.22-lgraph"
-
-Download model:
-
-```bash
-wget https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip
-unzip vosk-model-en-us-0.22-lgraph.zip
-```
-
-### "CUDA out of memory"
-
-Reduce batch size or use CPU fallback for MT/QE.
+This is expected — inference runs on ARM CPU only, since the JetPack 4 software stack doesn't support CUDA kernels for these models. There is no GPU fallback needed since GPU is never used.
 
 ### Poor ASR quality
 
 - Check microphone input: `python3 phase3b_main_FIXED.py --list-devices`
 - Increase noise reduction sensitivity in `phase3b_audio_module.py`
-- Use larger Vosk model (trades memory for accuracy)
+
+### Out-of-memory errors during model loading
+
+Ensure `gc.collect()` and the cooldown sleep are not removed from the sequential loading logic — these are required to reclaim memory between model loads on the Jetson Nano.
 
 ---
 
@@ -306,11 +281,11 @@ Reduce batch size or use CPU fallback for MT/QE.
 If you use this code in your research, please cite:
 
 ```bibtex
-@mastersthesis{yourlastname2026edge,
-  title={Integrated Quality Estimation in Real-Time Edge Speech Translation},
-  author={Your Name},
+@bachelorsthesis{farooq2026speechtranslation,
+  title={Quality-Aware Self-Correcting Speech Translation on an Edge Device},
+  author={Zubair Ajmal Farooq},
   year={2026},
-  school={Your University}
+  school={University of Surrey}
 }
 ```
 
@@ -324,7 +299,7 @@ Academic research project. Contact for usage permissions.
 
 ## Acknowledgments
 
-- **Vosk:** Lightweight ASR by Alpha Cephei
+- **Whisper:** ASR by OpenAI
 - **Opus-MT:** Neural MT by Helsinki-NLP
 - **Transformers:** Hugging Face library
 - **NVIDIA:** JetPack SDK & Jetson hardware
@@ -333,10 +308,6 @@ Academic research project. Contact for usage permissions.
 
 ## Contact
 
-- **Author:** Zubair
-- **Institution:** [Your University]
+- **Author:** Zubair Ajmal Farooq
+- **Institution:** University of Surrey
 - **GitHub:** [@juebae](https://github.com/juebae)
-
----
-
-**Last Updated:** February 16, 2026
