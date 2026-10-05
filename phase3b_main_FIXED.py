@@ -36,7 +36,7 @@ class RealtimeTranslationPipeline:
         if display_devices:
             self._show_audio_devices()
         
-        self.asr = WhisperASR(model_size="vosk-model-en-us-0.22-lgraph")
+        self.asr = WhisperASR(model_size="tiny")
         self.mt = OpusMT()
         self.qe = QualityEstimation(model_type="mbert")
         self.tts = EspeakNGTTS(language=target_language)
@@ -66,7 +66,7 @@ class RealtimeTranslationPipeline:
         print("PHASE 3B - REAL-TIME MICROPHONE SPEECH TRANSLATION")
         print("="*80 + "\n")
         
-        print("[STEP 1] Loading ASR Module (vosk)...")
+        print("[STEP 1] Loading ASR Module (Whisper tiny)...")
         success, msg = self.asr.load()
         print(f" {'Success' if success else 'Did not work'} {msg}\n")
         if not success: return False

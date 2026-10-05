@@ -173,8 +173,6 @@ python3 phase3b_main_FIXED.py --num-recordings 5
 
 This script loads all four models once at startup. It then loops: press Enter, speak, and recording stops after silence (energy VAD at RMS > 0.015 with a 5 s timeout, plus `noisereduce` spectral gating calibrated on 2 s of ambient noise). Session logs go to `~/disso/phase3b_sessions/`. The pipeline is English→Spanish only, because the MT model is fixed to `opus-mt-en-es`.
 
-> **Note:** `phase3b_main_FIXED.py` still creates `WhisperASR(model_size="vosk-model-en-us-0.22-lgraph")`, which is left over from an earlier Vosk version. Change it to `WhisperASR(model_size="tiny")` before running.
-
 ### Evaluation (Phases 4 and 5)
 
 Run these in order. Each one writes to `~/disso/results/`:
@@ -252,7 +250,6 @@ The dissertation's future work includes 8 GB hardware (such as the Jetson Orin N
 ## Troubleshooting
 
 - **No GPU acceleration.** This is expected. All models run on the CPU.
-- **`Whisper load failed` from `phase3b_main_FIXED.py`.** See the note above: set `model_size="tiny"`.
 - **Whisper error about `ffmpeg`.** Install it with `sudo apt-get install ffmpeg`.
 - **Model "not found" or snapshot errors.** Check that the weights are in the exact paths listed under [Model weights](#4-model-weights-download-once-then-run-offline).
 - **Out-of-memory errors while loading models.** Keep the `cleanup()`, `gc.collect()` and `time.sleep(3)` sequence. Close other processes, and consider adding swap.
