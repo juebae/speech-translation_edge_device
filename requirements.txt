@@ -1,29 +1,38 @@
-# ===== Edge Speech Translation Pipeline =====
-# Hardware: Jetson Nano 4GB, JetPack 4.6
-# Python: 3.6.9
-# Last updated: Feb 16, 2026
+# Quality-Aware Self-Correcting Speech Translation on an Edge Device
+# Target: NVIDIA Jetson Nano 4GB, JetPack 4.x (Ubuntu 18.04, aarch64)
+# Python: 3.8 (installed alongside the system Python 3.6)
+# Inference is CPU-only; no CUDA build of PyTorch is required.
+#
+# Install:  python3.8 -m venv .venv && source .venv/bin/activate
+#           pip install --upgrade pip && pip install -r requirements.txt
 
-# ===== Core ML/NLP =====
-torch==2.2.2              # PyTorch ML framework
-transformers==4.20.0      # Opus-MT translation, mBERT QE
-sentencepiece==0.2.0      # Tokenization for MT models
+# ===== Core ML / NLP =====
+torch==2.2.2               # CPU inference (aarch64 wheel from PyPI)
+transformers==4.20.0       # Opus-MT (MarianMT) + mBERT QE; tested stack is pinned <=4.30
+sentencepiece==0.2.0       # MarianTokenizer
+sacremoses                 # MarianTokenizer dependency
+openai-whisper             # Whisper tiny ASR (requires the ffmpeg binary, see below)
 
-# ===== Audio Processing =====
-sounddevice==0.5.3        # Microphone input capture
-numpy==1.24.4             # Array operations
-scipy==1.10.1             # Signal processing for audio
-noisereduce==3.0.3        # Background noise reduction
+# ===== Evaluation =====
+sacrebleu==1.5.1           # BLEU / ChrF. Scripts assume the 1.x API where corpus_chrf().score is 0-1
+                           # and multiply by 100; sacrebleu>=2.0 already returns 0-100.
+jiwer                      # WER for Whisper on FLEURS (phase4_baseline.py)
 
-# ===== Dependencies (auto-installed with above) =====
-# sacremoses - Tokenization helper (installed with transformers)
+# ===== Audio =====
+numpy==1.24.4              # last release supporting Python 3.8
+scipy==1.10.1              # last release supporting Python 3.8
+sounddevice==0.5.3         # microphone capture (needs PortAudio)
+soundfile                  # WAV I/O for the recording -> ASR temp-file bridge (needs libsndfile)
+noisereduce==3.0.3         # spectral-gating noise reduction (optional at runtime)
 
-# ===== Whisper ASR =====
-# Install via pip:
-#   pip3 install openai-whisper
-# Model downloads automatically on first use via whisper.load_model("tiny")
-
-# ===== System Dependencies (install via apt) =====
-# sudo apt-get update
-# sudo apt-get install -y espeak-ng          # Text-to-speech engine
-# sudo apt-get install -y portaudio19-dev    # Audio I/O (for sounddevice)
-# sudo apt-get install -y libsndfile1        # Audio file format support
+# ===== System dependencies (apt, not pip) =====
+# sudo apt-get install -y python3.8 python3.8-dev python3.8-venv \
+#     espeak-ng alsa-utils ffmpeg libsndfile1 portaudio19-dev libportaudio2
+#   espeak-ng  - TTS engine (called via subprocess)
+#   alsa-utils - provides `aplay` for TTS playback
+#   ffmpeg     - required by openai-whisper to read audio files
+#   libsndfile1 / portaudio - backends for soundfile / sounddevice
+#
+# ===== Not included =====
+# COMET scoring, GER and bootstrap significance tests were run off-device
+# on Google Colab and are not part of the on-device requirements.
